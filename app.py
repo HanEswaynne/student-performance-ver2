@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import joblib
+from io import BytesIO
 
 st.set_page_config(
     page_title="Student Pass/Fail Predictor",
@@ -127,6 +128,35 @@ def missing_fields(fields):
         label
         for label, value in fields
         if value is None or value == "" or value == SELECT_PLACEHOLDER
+    ]
+
+
+def create_excel_template(feature_columns):
+    template = pd.DataFrame(columns=feature_columns)
+    output = BytesIO()
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        template.to_excel(
+            writer,
+            index=False,
+            sheet_name="Student Data",
+        )
+
+    output.seek(0)
+    return output.getvalue()
+
+
+def read_uploaded_file(uploaded_file):
+    if uploaded_file.name.lower().endswith(".csv"):
+        return pd.read_csv(uploaded_file)
+    return pd.read_excel(uploaded_file)
+
+
+def validate_bulk_data(uploaded_data, feature_columns):
+    return [
+        column
+        for column in feature_columns
+        if column not in uploaded_data.columns
     ]
 
 
@@ -491,6 +521,139 @@ with tab_predict:
                 mime="text/csv",
             )
             st.markdown("</div>", unsafe_allow_html=True)
+
+    st.divider()
+
+    st.markdown(
+        """
+<div class="panel">
+    <p class="panel-title">📁 Bulk Student Prediction</p>
+    <p class="panel-text">
+        Download the template, fill in one student per row, upload the completed
+        Excel or CSV file, then generate predictions for every student.
+    </p>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+    bulk_col1, bulk_col2 = st.columns(2)
+
+    with bulk_col1:
+        st.markdown("### Step 1 — Download Template")
+        template_bytes = create_excel_template(selected_features)
+
+        st.download_button(
+            label="⬇️ Download Excel Template",
+            data=template_bytes,
+            file_name="student_passfail_bulk_template.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+        st.caption("Do not rename, delete, or rearrange the template column headers.")
+
+    with bulk_col2:
+        st.markdown("### Step 2 — Upload Completed File")
+        uploaded_file = st.file_uploader(
+            "Upload Excel or CSV file",
+            type=["xlsx", "csv"],
+            key="bulk_prediction_file",
+        )
+
+    if uploaded_file is not None:
+        try:
+            uploaded_data = read_uploaded_file(uploaded_file)
+            missing_columns = validate_bulk_data(uploaded_data, selected_features)
+
+            if missing_columns:
+                st.error("Missing required columns: " + ", ".join(missing_columns))
+                st.info("Download and use the provided template without changing its column headers.")
+            elif uploaded_data.empty:
+                st.warning("The uploaded file contains no student rows.")
+            else:
+                st.success(f"File uploaded successfully: {len(uploaded_data)} student record(s).")
+
+                with st.expander("Preview uploaded student data"):
+                    st.dataframe(uploaded_data.head(10), use_container_width=True)
+
+                if st.button(
+                    "✨ Predict All Students",
+                    key="bulk_predict_button",
+                    use_container_width=True,
+                ):
+                    bulk_input = uploaded_data[selected_features].copy()
+                    bulk_processed = preprocessor.transform(bulk_input)
+                    bulk_predictions = model.predict(bulk_processed)
+                    bulk_results = uploaded_data.copy()
+
+                    bulk_results["PredictedOutcome"] = [
+                        "Pass" if prediction == 1 else "Needs Academic Support"
+                        for prediction in bulk_predictions
+                    ]
+
+                    if hasattr(model, "predict_proba"):
+                        try:
+                            probabilities = model.predict_proba(bulk_processed)
+                            pass_class_index = list(model.classes_).index(1)
+                            bulk_results["PassProbabilityPercent"] = (
+                                probabilities[:, pass_class_index] * 100
+                            ).round(2)
+                        except (AttributeError, IndexError, TypeError, ValueError):
+                            pass
+
+                    st.session_state["bulk_prediction_results"] = bulk_results
+
+        except Exception as error:
+            st.error("The uploaded file could not be processed. Details: " + str(error))
+
+    if "bulk_prediction_results" in st.session_state:
+        bulk_results = st.session_state["bulk_prediction_results"]
+
+        st.markdown('<div class="results-panel">', unsafe_allow_html=True)
+        st.markdown(
+            '<p class="result-section-title">📊 Bulk Prediction Summary <span class="line"></span></p>',
+            unsafe_allow_html=True,
+        )
+
+        outcome_counts = bulk_results["PredictedOutcome"].value_counts()
+        pass_count = outcome_counts.get("Pass", 0)
+        support_count = outcome_counts.get("Needs Academic Support", 0)
+
+        stat1, stat2, stat3 = st.columns(3)
+        with stat1:
+            st.metric("Total Students", len(bulk_results))
+        with stat2:
+            st.metric("Predicted Pass", pass_count)
+        with stat3:
+            st.metric("Needs Academic Support", support_count)
+
+        chart_data = pd.DataFrame(
+            {
+                "Outcome": ["Pass", "Needs Academic Support"],
+                "Students": [pass_count, support_count],
+            }
+        ).set_index("Outcome")
+
+        st.bar_chart(chart_data, color="#0f766e")
+
+        st.markdown(
+            '<p class="result-section-title">📋 Predicted Student Records <span class="line"></span></p>',
+            unsafe_allow_html=True,
+        )
+        st.dataframe(bulk_results, use_container_width=True)
+
+        st.markdown(
+            '<p class="result-section-title">📄 Download Results <span class="line"></span></p>',
+            unsafe_allow_html=True,
+        )
+        st.download_button(
+            label="⬇️ Download Bulk Prediction CSV",
+            data=bulk_results.to_csv(index=False),
+            file_name="student_passfail_bulk_predictions.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown(
     '<p class="footer-note">Disclaimer: This prediction is generated from patterns in the training dataset. It is intended for educational analysis and student-support purposes only, not as a final academic decision.</p>',
