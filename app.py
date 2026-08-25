@@ -155,7 +155,10 @@ def create_excel_template(feature_columns):
 
         if "Gender" in feature_columns:
             gender_column = feature_columns.index("Gender") + 1
-            gender_letter = worksheet.cell(row=1, column=gender_column).column_letter
+            gender_letter = worksheet.cell(
+                row=1,
+                column=gender_column,
+            ).column_letter
             gender_validation = DataValidation(
                 type="list",
                 formula1='"Female,Male"',
@@ -166,11 +169,16 @@ def create_excel_template(feature_columns):
             gender_validation.errorTitle = "Invalid Gender"
             gender_validation.error = "Please select Female or Male from the list."
             worksheet.add_data_validation(gender_validation)
-            gender_validation.add(f"{gender_letter}2:{gender_letter}{max_template_rows}")
+            gender_validation.add(
+                f"{gender_letter}2:{gender_letter}{max_template_rows}"
+            )
 
         if "ParentalSupport" in feature_columns:
             support_column = feature_columns.index("ParentalSupport") + 1
-            support_letter = worksheet.cell(row=1, column=support_column).column_letter
+            support_letter = worksheet.cell(
+                row=1,
+                column=support_column,
+            ).column_letter
             support_validation = DataValidation(
                 type="list",
                 formula1='"Low,Medium,High"',
@@ -181,7 +189,9 @@ def create_excel_template(feature_columns):
             support_validation.errorTitle = "Invalid Parental Support"
             support_validation.error = "Please select Low, Medium, or High from the list."
             worksheet.add_data_validation(support_validation)
-            support_validation.add(f"{support_letter}2:{support_letter}{max_template_rows}")
+            support_validation.add(
+                f"{support_letter}2:{support_letter}{max_template_rows}"
+            )
 
     output.seek(0)
     return output.getvalue()
@@ -194,7 +204,137 @@ def read_uploaded_file(uploaded_file):
 
 
 def validate_bulk_data(uploaded_data, feature_columns):
-    return [column for column in feature_columns if column not in uploaded_data.columns]
+    errors = []
+    expected_columns = list(feature_columns)
+    actual_columns = list(uploaded_data.columns)
+
+    if uploaded_data.empty:
+        errors.append("The uploaded file is empty. Add at least one student row.")
+        return errors
+
+    missing_columns = [
+        column
+        for column in expected_columns
+        if column not in actual_columns
+    ]
+
+    extra_columns = [
+        column
+        for column in actual_columns
+        if column not in expected_columns
+    ]
+
+    if missing_columns:
+        errors.append(
+            "Missing required column(s): " + ", ".join(missing_columns)
+        )
+
+    if extra_columns:
+        errors.append(
+            "Unexpected column(s): " + ", ".join(extra_columns)
+        )
+
+    if actual_columns != expected_columns:
+        errors.append(
+            "Template columns must use the exact required names and order. "
+            "Please download and use the template from this app."
+        )
+
+    if errors:
+        return errors
+
+    cleaned_data = uploaded_data[expected_columns].copy()
+    empty_rows = cleaned_data.isna().all(axis=1)
+
+    if empty_rows.any():
+        errors.append(
+            f"Row(s) {', '.join(str(index + 2) for index in cleaned_data.index[empty_rows])} are completely empty. Remove them before uploading."
+        )
+
+    required_empty = cleaned_data.isna().any(axis=1)
+    if required_empty.any():
+        row_numbers = [
+            str(index + 2)
+            for index in cleaned_data.index[required_empty]
+        ]
+        errors.append(
+            "Some required values are missing in Excel row(s): "
+            + ", ".join(row_numbers)
+        )
+
+    if "Name" in cleaned_data.columns:
+        blank_name = cleaned_data["Name"].astype(str).str.strip().eq("")
+        if blank_name.any():
+            row_numbers = [
+                str(index + 2)
+                for index in cleaned_data.index[blank_name]
+            ]
+            errors.append(
+                "Student Name is blank in Excel row(s): "
+                + ", ".join(row_numbers)
+            )
+
+    if "Gender" in cleaned_data.columns:
+        invalid_gender = ~cleaned_data["Gender"].isin(["Female", "Male"])
+        if invalid_gender.any():
+            row_numbers = [
+                str(index + 2)
+                for index in cleaned_data.index[invalid_gender]
+            ]
+            errors.append(
+                "Gender must be Female or Male in Excel row(s): "
+                + ", ".join(row_numbers)
+            )
+
+    if "ParentalSupport" in cleaned_data.columns:
+        invalid_support = ~cleaned_data["ParentalSupport"].isin(
+            ["Low", "Medium", "High"]
+        )
+        if invalid_support.any():
+            row_numbers = [
+                str(index + 2)
+                for index in cleaned_data.index[invalid_support]
+            ]
+            errors.append(
+                "ParentalSupport must be Low, Medium, or High in Excel row(s): "
+                + ", ".join(row_numbers)
+            )
+
+    numeric_rules = {
+        "StudentID": (1, None),
+        "AttendanceRate": (0, 100),
+        "StudyHoursPerWeek": (0, 100),
+        "PreviousGrade": (0, 100),
+        "ExtracurricularActivities": (0, 3),
+    }
+
+    for column, (minimum, maximum) in numeric_rules.items():
+        if column not in cleaned_data.columns:
+            continue
+
+        numeric_values = pd.to_numeric(
+            cleaned_data[column],
+            errors="coerce",
+        )
+        invalid_numeric = numeric_values.isna()
+
+        if minimum is not None:
+            invalid_numeric |= numeric_values < minimum
+        if maximum is not None:
+            invalid_numeric |= numeric_values > maximum
+
+        if invalid_numeric.any():
+            range_text = f"{minimum}+" if maximum is None else f"{minimum} to {maximum}"
+            row_numbers = [
+                str(index + 2)
+                for index in cleaned_data.index[invalid_numeric]
+            ]
+            errors.append(
+                f"{column} must be a valid number from {range_text} in Excel row(s): "
+                + ", ".join(row_numbers)
+            )
+
+    return errors
 
 
 try:
@@ -439,7 +579,7 @@ with tab_predict:
 
                 if confidence_percent is not None:
                     st.markdown(
-                        '<div class="confidence-wrap"><div class="label">Model Confidence</div></div>',
+                        '<div class="confidence-wrap"><div class="label">Confidence in Predicted Outcome</div></div>',
                         unsafe_allow_html=True,
                     )
                     st.progress(confidence_percent / 100)
@@ -527,7 +667,6 @@ with tab_predict:
                     [
                         {
                             "predicted_outcome": "Pass" if is_pass else "Needs Academic Support",
-                            "model_confidence_percent": confidence_percent,
                             "student_id": student_id,
                             "student_name": student_name.strip(),
                             "gender": gender,
@@ -581,7 +720,7 @@ with tab_predict:
             )
             st.caption(
                 "Gender and Parental Support have dropdown selections in the Excel template. "
-                "Do not rename, delete, or rearrange the headers."
+                "Use the exact columns and column order in the downloaded template."
             )
 
         with bulk_col2:
@@ -592,18 +731,30 @@ with tab_predict:
                 key="bulk_prediction_file",
             )
 
+        valid_bulk_file = False
+        uploaded_data = None
+
         if uploaded_file is not None:
             try:
                 uploaded_data = read_uploaded_file(uploaded_file)
-                missing_columns = validate_bulk_data(uploaded_data, selected_features)
+                validation_errors = validate_bulk_data(
+                    uploaded_data,
+                    selected_features,
+                )
 
-                if missing_columns:
-                    st.error("Missing required columns: " + ", ".join(missing_columns))
-                    st.info("Download and use the provided template without changing its column headers.")
-                elif uploaded_data.empty:
-                    st.warning("The uploaded file contains no student rows.")
+                if validation_errors:
+                    st.error("The uploaded file cannot be used for prediction.")
+                    for validation_error in validation_errors:
+                        st.warning(validation_error)
+                    st.info(
+                        "Please download the template again, fill all required fields, "
+                        "and upload the completed file without changing its headers."
+                    )
                 else:
-                    st.success(f"File uploaded successfully: {len(uploaded_data)} student record(s).")
+                    valid_bulk_file = True
+                    st.success(
+                        f"File validated successfully: {len(uploaded_data)} student record(s)."
+                    )
 
                     with st.expander("Preview uploaded student data"):
                         st.dataframe(uploaded_data.head(10), use_container_width=True)
@@ -623,20 +774,14 @@ with tab_predict:
                             for prediction in bulk_predictions
                         ]
 
-                        if hasattr(model, "predict_proba"):
-                            try:
-                                probabilities = model.predict_proba(bulk_processed)
-                                pass_class_index = list(model.classes_).index(1)
-                                bulk_results["PassProbabilityPercent"] = (
-                                    probabilities[:, pass_class_index] * 100
-                                ).round(2)
-                            except (AttributeError, IndexError, TypeError, ValueError):
-                                pass
-
                         st.session_state["bulk_prediction_results"] = bulk_results
 
             except Exception as error:
-                st.error("The uploaded file could not be processed. Details: " + str(error))
+                st.error(
+                    "The uploaded file could not be read. Please upload a valid Excel "
+                    "or CSV file downloaded from this application."
+                )
+                st.caption("Technical details: " + str(error))
 
         if "bulk_prediction_results" in st.session_state:
             bulk_results = st.session_state["bulk_prediction_results"]
