@@ -19,7 +19,7 @@ OUTCOME_STYLES = {
         "color": "#047857",
         "glow": "rgba(52, 211, 153, 0.25)",
     },
-    "support": {
+    "fail": {
         "bg": "#fef2f2",
         "border": "#f87171",
         "color": "#b91c1c",
@@ -74,8 +74,8 @@ div[data-testid="stNumberInput"] label, div[data-testid="stSelectbox"] label, di
 .metric-card.attendance { border-top: 4px solid #3b82f6; }.metric-card.study { border-top: 4px solid #10b981; }.metric-card.grade { border-top: 4px solid #8b5cf6; }.metric-card.activities { border-top: 4px solid #0f766e; }
 .metric-card .label { color: #64748b; font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; margin-bottom: .35rem; }.metric-card .value { color: #0f172a; font-size: 1.45rem; font-weight: 800; line-height: 1.1; }
 .profile-card { border-radius: 16px; padding: 1.05rem 1.15rem; min-height: 180px; border: 1px solid transparent; box-shadow: 0 6px 18px rgba(15,23,42,.04); }
-.profile-card.strengths { background: linear-gradient(180deg,#ecfdf5 0%,#f8fffb 100%); border-color: #a7f3d0; }.profile-card.support { background: linear-gradient(180deg,#fff7ed 0%,#fffaf5 100%); border-color: #fdba74; }
-.profile-card h4 { margin: 0 0 .7rem; font-size: 1rem; font-weight: 800; }.profile-card.strengths h4 { color: #047857; }.profile-card.support h4 { color: #c2410c; }.profile-card ul { margin: 0; padding-left: 1.1rem; color: #334155; line-height: 1.7; font-size: .92rem; }
+.profile-card.strengths { background: linear-gradient(180deg,#ecfdf5 0%,#f8fffb 100%); border-color: #a7f3d0; }.profile-card.fail { background: linear-gradient(180deg,#fff7ed 0%,#fffaf5 100%); border-color: #fdba74; }
+.profile-card h4 { margin: 0 0 .7rem; font-size: 1rem; font-weight: 800; }.profile-card.strengths h4 { color: #047857; }.profile-card.fail h4 { color: #c2410c; }.profile-card ul { margin: 0; padding-left: 1.1rem; color: #334155; line-height: 1.7; font-size: .92rem; }
 .download-wrap { margin-top: .35rem; padding: 1rem; border-radius: 14px; background: #f8fafc; border: 1px dashed #cbd5e1; text-align: center; }.download-wrap p { margin: 0 0 .65rem; color: #64748b; font-size: .88rem; }
 div[data-testid="stDownloadButton"] > button { border-radius: 12px !important; font-weight: 700 !important; background: #fff !important; color: #0f766e !important; border: 1px solid #99f6e4 !important; box-shadow: none !important; }
 .footer-note { color: #94a3b8; font-size: .82rem; text-align: center; margin-top: 2rem; line-height: 1.65; padding: 0 1rem; }
@@ -353,10 +353,10 @@ st.markdown(
 <div class="hero">
     <div class="hero-badge">ML-Powered Educational Tool</div>
     <h1>🎓 Student Pass/Fail Predictor</h1>
-    <p>Estimate whether a student is likely to pass or may need academic support, based on student identification, attendance, weekly study time, previous grade, extracurricular activities, parental support, and gender.</p>
+    <p>Estimate whether a student is predicted to pass or fail, based on student identification, attendance, weekly study time, previous grade, extracurricular activities, parental support, and gender.</p>
     <div class="hero-stats">
         <span class="hero-stat">{len(selected_features)} model features</span>
-        <span class="hero-stat">Pass / Needs Support output</span>
+        <span class="hero-stat">Pass / Fail output</span>
         <span class="hero-stat">Student-support insights</span>
     </div>
 </div>
@@ -386,7 +386,7 @@ with tab_about:
 
     st.markdown(
         """
-<div class="how-it-works"><p><strong>What does this prediction do?</strong> The model estimates whether a student is likely to <strong>pass</strong> or may <strong>need academic support</strong>. It is an educational-support indicator based on patterns in the training data, not an official result or final academic decision.</p></div>
+<div class="how-it-works"><p><strong>What does this prediction do?</strong> The model estimates whether a student is predicted to <strong>pass</strong> or <strong>fail</strong>. It is an educational-support indicator based on patterns in the training data, not an official result or final academic decision.</p></div>
 """,
         unsafe_allow_html=True,
     )
@@ -412,7 +412,7 @@ The deployed model is the algorithm that achieved the highest F1-score on the te
 Target labels:
 
 - **Pass (1)**
-- **Needs Academic Support / Fail (0)**
+- **Fail (0)**
 """
         )
 
@@ -549,8 +549,8 @@ with tab_predict:
                 prediction = int(model.predict(processed_student)[0])
 
                 is_pass = prediction == 1
-                outcome = "PASS" if is_pass else "NEEDS SUPPORT"
-                tone = "pass" if is_pass else "support"
+                outcome = "PASS" if is_pass else "FAIL"
+                tone = "pass" if is_pass else "fail"
                 style = OUTCOME_STYLES[tone]
                 confidence_percent = None
 
@@ -595,8 +595,8 @@ with tab_predict:
                     )
                 else:
                     render_banner(
-                        "The model indicates that this student may benefit from early academic support, study planning, or attendance monitoring.",
-                        "support",
+                        "The model predicts a fail outcome. This student may benefit from early academic support, study planning, or attendance monitoring.",
+                        "fail",
                     )
 
                 st.markdown(
@@ -614,38 +614,38 @@ with tab_predict:
                     render_metric("Activities", str(extracurricular_activities), "activities")
 
                 strengths = []
-                support_areas = []
+                fail_risk_areas = []
 
                 if attendance_rate >= 90:
                     strengths.append("Strong attendance record")
                 elif attendance_rate < 75:
-                    support_areas.append("Attendance may need improvement")
+                    fail_risk_areas.append("Attendance may need improvement")
 
                 if study_hours >= 10:
                     strengths.append("Consistent weekly study time")
                 elif study_hours < 5:
-                    support_areas.append("More regular weekly study time may help")
+                    fail_risk_areas.append("More regular weekly study time may help")
 
                 if previous_grade >= 75:
                     strengths.append("Strong previous academic performance")
                 elif previous_grade < 60:
-                    support_areas.append("Previous grade suggests a need for academic support")
+                    fail_risk_areas.append("Previous grade suggests a need for academic support")
 
                 if parental_support == "High":
                     strengths.append("High parental support is available")
                 elif parental_support == "Low":
-                    support_areas.append("Consider strengthening learning support at home or school")
+                    fail_risk_areas.append("Consider strengthening learning support at home or school")
 
                 if extracurricular_activities > 0:
                     strengths.append("Involvement in extracurricular activities")
 
                 if not strengths:
                     strengths.append("No specific strengths were identified using the simple input indicators")
-                if not support_areas:
-                    support_areas.append("No immediate support area was identified using the simple input indicators")
+                if not fail_risk_areas:
+                    fail_risk_areas.append("No immediate risk area was identified using the simple input indicators")
 
                 strengths_html = "".join(f"<li>{item}</li>" for item in strengths)
-                support_html = "".join(f"<li>{item}</li>" for item in support_areas)
+                fail_risk_html = "".join(f"<li>{item}</li>" for item in fail_risk_areas)
 
                 st.markdown(
                     '<p class="result-section-title">🧭 Learning Profile <span class="line"></span></p>',
@@ -659,14 +659,14 @@ with tab_predict:
                     )
                 with right:
                     st.markdown(
-                        f'<div class="profile-card support"><h4>🛟 Areas for Support</h4><ul>{support_html}</ul></div>',
+                        f'<div class="profile-card fail"><h4>⚠️ Areas for Improvement</h4><ul>{fail_risk_html}</ul></div>',
                         unsafe_allow_html=True,
                     )
 
                 report = pd.DataFrame(
                     [
                         {
-                            "predicted_outcome": "Pass" if is_pass else "Needs Academic Support",
+                            "predicted_outcome": "Pass" if is_pass else "Fail",
                             "student_id": student_id,
                             "student_name": student_name.strip(),
                             "gender": gender,
@@ -700,7 +700,7 @@ with tab_predict:
             """
 <div class="panel">
     <p class="panel-title">📁 Bulk Student Prediction</p>
-    <p class="panel-text">Step 1: Download the template. Step 2: Fill in one student per row. Step 3: Upload the completed Excel or CSV file. Step 4: Predict all students. Step 5: View the outcome chart and download the prediction CSV.</p>
+    <p class="panel-text">Step 1: Download the template. Step 2: Fill in one student per row. Step 3: Upload the completed Excel or CSV file. Step 4: Predict all students. Step 5: View the pass/fail chart and download the prediction CSV.</p>
 </div>
 """,
             unsafe_allow_html=True,
@@ -731,9 +731,6 @@ with tab_predict:
                 key="bulk_prediction_file",
             )
 
-        valid_bulk_file = False
-        uploaded_data = None
-
         if uploaded_file is not None:
             try:
                 uploaded_data = read_uploaded_file(uploaded_file)
@@ -751,7 +748,6 @@ with tab_predict:
                         "and upload the completed file without changing its headers."
                     )
                 else:
-                    valid_bulk_file = True
                     st.success(
                         f"File validated successfully: {len(uploaded_data)} student record(s)."
                     )
@@ -770,7 +766,7 @@ with tab_predict:
                         bulk_results = uploaded_data.copy()
 
                         bulk_results["PredictedOutcome"] = [
-                            "Pass" if prediction == 1 else "Needs Academic Support"
+                            "Pass" if prediction == 1 else "Fail"
                             for prediction in bulk_predictions
                         ]
 
@@ -794,7 +790,7 @@ with tab_predict:
 
             outcome_counts = bulk_results["PredictedOutcome"].value_counts()
             pass_count = outcome_counts.get("Pass", 0)
-            support_count = outcome_counts.get("Needs Academic Support", 0)
+            fail_count = outcome_counts.get("Fail", 0)
 
             stat1, stat2, stat3 = st.columns(3)
             with stat1:
@@ -802,12 +798,12 @@ with tab_predict:
             with stat2:
                 st.metric("Predicted Pass", pass_count)
             with stat3:
-                st.metric("Needs Academic Support", support_count)
+                st.metric("Predicted Fail", fail_count)
 
             chart_data = pd.DataFrame(
                 {
-                    "Outcome": ["Pass", "Needs Academic Support"],
-                    "Students": [pass_count, support_count],
+                    "Outcome": ["Pass", "Fail"],
+                    "Students": [pass_count, fail_count],
                 }
             ).set_index("Outcome")
             st.bar_chart(chart_data, color="#0f766e")
